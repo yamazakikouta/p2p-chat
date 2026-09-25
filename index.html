@@ -4,11 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>P2P Chat</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 <style>
   :root {
     --bg: #f3f5f4; --panel: #ffffff; --ink: #1c2421; --muted: #66726d;
     --line: #d9e0dd; --accent: #0f7b62; --accent-ink: #ffffff;
     --mine: #0f7b62; --mine-ink: #ffffff; --theirs: #e6ebe9; --warn: #b4551f;
+    --scrim: rgba(10, 16, 14, .55);
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
@@ -16,6 +19,7 @@
       --bg: #121715; --panel: #1b2220; --ink: #e5ece9; --muted: #92a09a;
       --line: #2c3633; --accent: #3fbf98; --accent-ink: #0b1411;
       --mine: #2a8f71; --mine-ink: #ffffff; --theirs: #262f2c; --warn: #e6925e;
+      --scrim: rgba(0, 0, 0, .65);
       color-scheme: dark;
     }
   }
@@ -29,22 +33,25 @@
     padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px);
   }
   header {
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--panel);
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel);
   }
   header h1 { font-size: 16px; margin: 0; letter-spacing: .02em; }
-  .status { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .status { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; margin-left: auto; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
   .status[data-s="connected"] .dot { background: var(--accent); }
   .status[data-s="failed"] .dot { background: var(--warn); }
+  #members { padding: 6px 16px; font-size: 12px; color: var(--muted); background: var(--panel); border-bottom: 1px solid var(--line); }
 
-  #setup { padding: 16px; overflow-y: auto; display: grid; gap: 16px; max-width: 640px; width: 100%; margin: 0 auto; }
+  #setup { padding: 16px; overflow-y: auto; display: grid; gap: 16px; max-width: 640px; width: 100%; margin: 0 auto; align-content: start; }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 10px; }
   .card h2 { font-size: 14px; margin: 0; }
   .card p { margin: 0; color: var(--muted); font-size: 13px; }
   .step { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--accent); text-transform: uppercase; }
+  label { font-size: 13px; color: var(--muted); display: grid; gap: 4px; }
+  input[type=text] { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); }
   textarea {
-    width: 100%; min-height: 84px; resize: vertical; font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace;
+    width: 100%; min-height: 72px; resize: vertical; font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace;
     padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink);
     word-break: break-all;
   }
@@ -54,14 +61,20 @@
     padding: 8px 14px; border-radius: 8px; cursor: pointer;
   }
   button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  button.small { font-size: 12px; padding: 5px 10px; }
   button:disabled { opacity: .5; cursor: default; }
   button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .qr { background: #fff; padding: 10px; border-radius: 8px; justify-self: center; width: min(300px, 100%); }
+  .qr img { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+  details summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+  details[open] summary { margin-bottom: 8px; }
 
   #chat { flex: 1; display: flex; flex-direction: column; min-height: 0; }
   #log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
   .msg { max-width: 78%; padding: 8px 12px; border-radius: 14px; background: var(--theirs); word-wrap: break-word; white-space: pre-wrap; }
   .msg.me { align-self: flex-end; background: var(--mine); color: var(--mine-ink); }
-  .msg.sys { align-self: center; background: none; color: var(--muted); font-size: 12px; padding: 0; }
+  .msg.sys { align-self: center; background: none; color: var(--muted); font-size: 12px; padding: 0; text-align: center; }
+  .msg .who { font-size: 11px; font-weight: 700; color: var(--accent); margin-bottom: 2px; }
   .msg img { display: block; max-width: 100%; max-height: 260px; border-radius: 8px; }
   .msg a { color: inherit; }
   .msg .meta { font-size: 11px; opacity: .75; margin-top: 2px; }
@@ -70,59 +83,60 @@
     display: flex; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--line); background: var(--panel); align-items: flex-end;
   }
   #text { flex: 1; min-height: 40px; max-height: 120px; font: inherit; font-size: 15px; resize: none; }
-  #fileBtn { padding: 8px 12px; }
+
+  .sheet { position: fixed; inset: 0; background: var(--scrim); display: flex; align-items: flex-end; justify-content: center; z-index: 10; }
+  .sheet > .card {
+    width: min(520px, 100%); max-height: 92%; overflow-y: auto; border-radius: 14px 14px 0 0;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  }
+  @media (min-width: 600px) { .sheet { align-items: center; } .sheet > .card { border-radius: 14px; } }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  #scanVideo { width: 100%; border-radius: 8px; background: #000; aspect-ratio: 1; object-fit: cover; }
 </style>
 </head>
 <body>
 <header>
   <h1>P2P Chat</h1>
+  <button class="small" id="inviteBtn" hidden>＋ 招待</button>
   <div class="status" id="status" data-s="idle"><span class="dot"></span><span id="statusText">未接続</span></div>
 </header>
+<div id="members" hidden></div>
 
 <main id="setup">
-  <!-- 最初の画面 -->
   <section class="card" id="start">
-    <h2>接続のしかた</h2>
-    <p>サーバを使わず、接続コードをLINEやメールで手渡しして端末同士を直接つなぎます。</p>
+    <h2>はじめる</h2>
+    <p>サーバを使わず、端末同士を直接つなぎます。接続コードはQRコードかLINEなどで手渡しします。</p>
+    <label>表示名<input type="text" id="name" maxlength="20" autocomplete="nickname"></label>
     <div class="row">
-      <button class="primary" id="hostBtn">部屋を作る（招待する側）</button>
-      <button id="joinBtn">招待コードを貼り付けて参加</button>
+      <button class="primary" id="hostBtn">部屋を作る（ホスト）</button>
+      <button id="joinBtn">招待を受けて参加</button>
     </div>
   </section>
 
-  <!-- 招待する側 -->
-  <section class="card" id="hostOffer" hidden>
-    <span class="step">Step 1 / 2</span>
-    <h2>この招待リンクを相手に送る</h2>
-    <p>相手がリンクを開くと、返信用のコードが表示されます。</p>
-    <textarea id="offerOut" readonly></textarea>
-    <div class="row">
-      <button class="primary" id="shareOffer">共有</button>
-      <button id="copyOffer">コピー</button>
-    </div>
-  </section>
-  <section class="card" id="hostAnswer" hidden>
-    <span class="step">Step 2 / 2</span>
-    <h2>相手から届いた返信コードを貼り付ける</h2>
-    <textarea id="answerIn" placeholder="返信コードをここに貼り付け"></textarea>
-    <div class="row"><button class="primary" id="acceptAnswer">接続する</button></div>
-  </section>
-
-  <!-- 参加する側 -->
   <section class="card" id="guestIn" hidden>
-    <h2>招待コード（またはリンク）を貼り付ける</h2>
-    <textarea id="offerIn" placeholder="招待リンク or コード"></textarea>
-    <div class="row"><button class="primary" id="acceptOffer">返信コードを作る</button></div>
+    <h2>招待を読み込む</h2>
+    <p>ホストの画面のQRコードをスマホのカメラで読むのがいちばん簡単です。リンクやコードを貼り付けても参加できます。</p>
+    <div class="row"><button class="primary" id="scanOffer">QRを読み取る</button></div>
+    <textarea id="offerIn" placeholder="招待リンク or コードを貼り付け"></textarea>
+    <div class="row"><button id="acceptOffer">参加する</button></div>
   </section>
+
   <section class="card" id="guestAnswer" hidden>
     <span class="step">最後のステップ</span>
-    <h2>この返信コードを招待してくれた人に送り返す</h2>
-    <p>相手が貼り付けると、自動でチャット画面に切り替わります。</p>
-    <textarea id="answerOut" readonly></textarea>
-    <div class="row">
-      <button class="primary" id="shareAnswer">共有</button>
-      <button id="copyAnswer">コピー</button>
-    </div>
+    <h2>この返信コードをホストに渡す</h2>
+    <p>ホストに「QRを読み取る」でこのQRを読んでもらうか、下のコードを送ってください。つながると自動でチャットに切り替わります。</p>
+    <div class="qr" id="answerQR"></div>
+    <label>表示名<input type="text" id="name2" maxlength="20" autocomplete="nickname"></label>
+    <details>
+      <summary>コードで送る</summary>
+      <div style="display:grid;gap:8px">
+        <textarea id="answerOut" readonly></textarea>
+        <div class="row">
+          <button id="shareAnswer">共有</button>
+          <button id="copyAnswer">コピー</button>
+        </div>
+      </div>
+    </details>
   </section>
 </main>
 
@@ -136,6 +150,44 @@
   </form>
 </section>
 
+<!-- ホスト用：招待シート -->
+<div class="sheet" id="invite" hidden>
+  <div class="card">
+    <div class="sheet-head"><h2>参加者を招待</h2><button class="small" id="closeInvite">閉じる</button></div>
+    <span class="step">Step 1 / 2</span>
+    <p>参加する人にこのQRをスマホのカメラで読んでもらいます。離れている人にはリンクを送ってください。</p>
+    <div class="qr" id="offerQR"></div>
+    <details>
+      <summary>リンクで送る</summary>
+      <div style="display:grid;gap:8px">
+        <textarea id="offerOut" readonly></textarea>
+        <div class="row">
+          <button id="shareOffer">共有</button>
+          <button id="copyOffer">コピー</button>
+        </div>
+      </div>
+    </details>
+    <span class="step">Step 2 / 2</span>
+    <p>相手の画面に出た返信コードを読み取るか、貼り付けます。</p>
+    <div class="row"><button class="primary" id="scanAnswer">QRを読み取る</button></div>
+    <textarea id="answerIn" placeholder="返信コードを貼り付け"></textarea>
+    <div class="row">
+      <button id="acceptAnswer">接続する</button>
+      <button id="newInvite">招待を作り直す</button>
+    </div>
+    <p id="inviteState"></p>
+  </div>
+</div>
+
+<!-- QRスキャナ -->
+<div class="sheet" id="scanner" hidden>
+  <div class="card">
+    <div class="sheet-head"><h2>QRコードを読み取る</h2><button class="small" id="closeScan">やめる</button></div>
+    <video id="scanVideo" playsinline muted></video>
+    <p id="scanMsg">QRコードを枠の中に映してください</p>
+  </div>
+</div>
+
 <script>
 // ---------- 設定 ----------
 // STUN: 自分のグローバルIPを知るためだけに使う公開サーバ（データは通らない）
@@ -146,10 +198,41 @@ const ICE = { iceServers: [
 const CHUNK = 16 * 1024;
 
 const $ = id => document.getElementById(id);
-let pc, dc;
+const rid = (n = 8) => Array.from(crypto.getRandomValues(new Uint8Array(n)), b => 'abcdefghijklmnopqrstuvwxyz0123456789'[b % 36]).join('');
+
+// ---------- 状態 ----------
+// ホストが全員とつながり、メッセージを中継する「スター型」
+const me = { id: rid(), name: '' };
+let role = null;              // 'host' | 'guest'
+const peers = new Map();      // id -> peer（ホスト: 参加者全員 / 参加者: ホストだけ）
+let pending = null;           // ホストが招待中でまだつながっていない peer
+let members = [];             // [{id, name}]
+
+try { me.name = localStorage.getItem('p2pchat-name') || ''; } catch {}
+if (!me.name) me.name = 'ゲスト' + Math.floor(1000 + Math.random() * 9000);
+$('name').value = me.name;
+$('name2').oninput = () => { $('name').value = $('name2').value; saveName(); };
+function saveName() {
+  me.name = $('name').value.trim() || me.name;
+  try { localStorage.setItem('p2pchat-name', me.name); } catch {}
+}
 
 function setStatus(s, text) { $('status').dataset.s = s; $('statusText').textContent = text; }
 function show(...ids) { for (const el of document.querySelectorAll('#setup > section')) el.hidden = !ids.includes(el.id); }
+function enterChat() { $('setup').hidden = true; $('chat').hidden = false; }
+function renderMembers() {
+  $('members').hidden = !members.length;
+  $('members').textContent = `参加者 ${members.length}人: ` + members.map(m => m.id === me.id ? m.name + '（自分）' : m.name).join('、');
+  if (role) setStatus(peers.size ? 'connected' : 'idle', peers.size ? '接続中（P2P）' : role === 'host' ? '参加者待ち' : '未接続');
+}
+
+// ---------- QR表示 ----------
+function renderQR(el, text) {
+  const q = qrcode(0, 'L'); q.addData(text); q.make();
+  el.innerHTML = '';
+  const img = new Image(); img.src = q.createDataURL(4, 2); img.alt = 'QRコード';
+  el.append(img);
+}
 
 // ---------- 接続コードの圧縮（SDP -> deflate -> base64url） ----------
 const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -176,53 +259,262 @@ async function decode(code) {
 function waitIce(pc) {
   return new Promise(res => {
     if (pc.iceGatheringState === 'complete') return res();
-    const done = () => { if (pc.iceGatheringState === 'complete') res(); };
-    pc.addEventListener('icegatheringstatechange', done);
+    pc.addEventListener('icegatheringstatechange', () => { if (pc.iceGatheringState === 'complete') res(); });
     setTimeout(res, 4000);
   });
 }
 
+// ---------- ピア ----------
 function newPeer() {
-  pc = new RTCPeerConnection(ICE);
-  pc.onconnectionstatechange = () => {
-    const s = pc.connectionState;
-    if (s === 'connected') setStatus('connected', '接続中（P2P）');
-    else if (s === 'connecting') setStatus('idle', '接続しています…');
-    else if (s === 'failed') { setStatus('failed', '接続失敗'); sys('接続できませんでした。ネットワークの組み合わせによっては直接つながらないことがあります（TURN中継が必要なケース）。'); }
-    else if (s === 'disconnected' || s === 'closed') { setStatus('failed', '切断'); sys('相手との接続が切れました'); }
+  const p = { pc: new RTCPeerConnection(ICE), dc: null, id: null, name: '', q: [], busy: false };
+  p.pc.onconnectionstatechange = () => {
+    const s = p.pc.connectionState;
+    // 参加者側は返信コードを渡してからホストが読み取るまでの間に一度 failed になることがある。
+    // ホストが読み取れば復帰するので、つながる前は閉じずに待ち続ける
+    if (role === 'guest' && !p.id) return;
+    if (s === 'failed') {
+      if (p === pending) $('inviteState').textContent = '接続できませんでした。「招待を作り直す」から再度お試しください（回線の組み合わせによっては直接つながりません）。';
+      dropPeer(p);
+    } else if (s === 'disconnected' || s === 'closed') dropPeer(p);
   };
+  return p;
 }
 
-// ---------- 招待する側 ----------
-$('hostBtn').onclick = async () => {
-  $('hostBtn').disabled = true; setStatus('idle', 'コード作成中…');
-  newPeer();
-  setupChannel(pc.createDataChannel('chat', { ordered: true }));
-  await pc.setLocalDescription(await pc.createOffer());
-  await waitIce(pc);
-  const link = location.href.split('#')[0] + '#o=' + await encode(pc.localDescription);
-  $('offerOut').value = link;
-  show('hostOffer', 'hostAnswer'); setStatus('idle', '相手の返信待ち');
-};
-$('acceptAnswer').onclick = async () => {
-  try { await pc.setRemoteDescription(await decode($('answerIn').value)); setStatus('idle', '接続しています…'); }
-  catch (e) { alert('返信コードを読み取れませんでした: ' + e.message); }
-};
+function setupChannel(p, ch) {
+  p.dc = ch;
+  ch.binaryType = 'arraybuffer';
+  ch.bufferedAmountLowThreshold = 256 * 1024;
+  ch.onopen = () => {
+    if (role === 'guest') {
+      peers.set('host', p); p.id = 'host';
+      enterChat();
+      sendTo(p, JSON.stringify({ t: 'hello', id: me.id, name: me.name }));
+      sys('ホストにつながりました。ここから先のデータは端末間で直接やり取りされます。');
+      renderMembers();
+    }
+  };
+  ch.onclose = () => dropPeer(p);
+  ch.onmessage = e => onData(p, e.data);
+}
 
-// ---------- 参加する側 ----------
-$('joinBtn').onclick = () => show('guestIn');
+function dropPeer(p) {
+  if (p.dropped) return;
+  p.dropped = true;
+  try { p.pc.close(); } catch {}
+  if (p === pending) { pending = null; return; }
+  if (!p.id || !peers.has(p.id)) return;
+  peers.delete(p.id);
+  if (role === 'host') {
+    members = members.filter(m => m.id !== p.id);
+    const t = `${p.name} さんが退出しました`;
+    sys(t); broadcast(JSON.stringify({ t: 'sys', text: t })); broadcastMembers();
+  } else {
+    members = [];
+    sys('ホストとの接続が切れました。もう一度参加するには、新しい招待を受けてください。');
+    setStatus('failed', '切断');
+  }
+  renderMembers();
+}
+
+// 送信キュー（相手ごと）。バッファがあふれないように待ちながら送る
+function sendTo(p, data) {
+  if (!p.dc || p.dc.readyState !== 'open') return;
+  p.q.push(data);
+  if (!p.busy) pump(p);
+}
+async function pump(p) {
+  p.busy = true;
+  while (p.q.length) {
+    if (p.dc.readyState !== 'open') { p.q.length = 0; break; }
+    if (p.dc.bufferedAmount > 1024 * 1024)
+      await new Promise(r => p.dc.addEventListener('bufferedamountlow', r, { once: true }));
+    p.dc.send(p.q.shift());
+  }
+  p.busy = false;
+}
+function broadcast(data, except) { for (const p of peers.values()) if (p !== except) sendTo(p, data); }
+function backlog() { let n = 0; for (const p of peers.values()) n = Math.max(n, p.q.length); return n; }
+function broadcastMembers() { broadcast(JSON.stringify({ t: 'members', list: members })); }
+
+// ---------- 受信 ----------
+// 文字列 = JSON制御メッセージ / バイナリ = [1byte: fid長][fid][データ]
+const incoming = new Map();
+function onData(src, data) {
+  if (typeof data !== 'string') {
+    const u = new Uint8Array(data);
+    const fid = new TextDecoder().decode(u.subarray(1, 1 + u[0]));
+    const f = incoming.get(fid);
+    if (f) {
+      const chunk = data.slice(1 + u[0]);
+      f.parts.push(chunk); f.got += chunk.byteLength;
+      f.el.querySelector('progress').value = f.got / f.size;
+    }
+    if (role === 'host') broadcast(data, src);
+    return;
+  }
+  const m = JSON.parse(data);
+  switch (m.t) {
+    case 'hello': // ホストだけが受け取る
+      if (role !== 'host') return;
+      src.id = m.id; src.name = m.name;
+      peers.set(m.id, src);
+      members.push({ id: m.id, name: m.name });
+      { const t = `${m.name} さんが参加しました`; sys(t); broadcast(JSON.stringify({ t: 'sys', text: t }), src); }
+      broadcastMembers(); renderMembers();
+      return;
+    case 'members': members = m.list; renderMembers(); return;
+    case 'sys': sys(m.text); return;
+    case 'text': bubble(m.from).append(m.text); break;
+    case 'file': incoming.set(m.fid, { ...m, parts: [], got: 0, el: fileBubble(m.from, m) }); break;
+    case 'end': {
+      const f = incoming.get(m.fid);
+      if (f) { finishFile(f.el, new Blob(f.parts, { type: f.mime }), f); incoming.delete(m.fid); }
+      break;
+    }
+  }
+  if (role === 'host') broadcast(data, src); // 他の参加者へ中継
+}
+
+// ---------- 表示 ----------
+function bubble(from, cls = '') {
+  const mine = from && from.id === me.id;
+  const d = document.createElement('div');
+  d.className = 'msg ' + (mine ? 'me ' : '') + cls;
+  if (from && !mine) { const w = document.createElement('div'); w.className = 'who'; w.textContent = from.name; d.append(w); }
+  $('log').append(d); $('log').scrollTop = $('log').scrollHeight;
+  return d;
+}
+function sys(t) { bubble(null, 'sys').textContent = t; }
+function fileBubble(from, f) {
+  const d = bubble(from);
+  const box = document.createElement('div'); box.className = 'body';
+  box.innerHTML = '<div class="name"></div><progress max="1" value="0"></progress><div class="meta"></div>';
+  box.querySelector('.name').textContent = f.name;
+  box.querySelector('.meta').textContent = fmt(f.size);
+  d.append(box);
+  return box;
+}
+function finishFile(box, blob, f) {
+  const url = URL.createObjectURL(blob);
+  box.textContent = '';
+  if (f.mime.startsWith('image/')) {
+    const img = new Image(); img.src = url; img.alt = f.name;
+    img.onload = () => $('log').scrollTop = $('log').scrollHeight;
+    box.append(img);
+  }
+  const a = document.createElement('a'); a.href = url; a.download = f.name; a.textContent = '📎 ' + f.name;
+  const meta = document.createElement('div'); meta.className = 'meta'; meta.textContent = fmt(f.size);
+  box.append(a, meta);
+}
+const fmt = n => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
+
+// ---------- 送信 ----------
+const from = () => ({ id: me.id, name: me.name });
+$('composer').onsubmit = e => {
+  e.preventDefault();
+  const text = $('text').value.trim();
+  if (!text || !peers.size) return;
+  $('text').value = '';
+  bubble(from()).append(text);
+  broadcast(JSON.stringify({ t: 'text', from: from(), text }));
+};
+$('text').onkeydown = e => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && matchMedia('(pointer:fine)').matches) { e.preventDefault(); $('composer').requestSubmit(); }
+};
+$('fileBtn').onclick = () => $('file').click();
+$('file').onchange = () => { for (const f of $('file').files) sendFile(f); $('file').value = ''; };
+
+let fileChain = Promise.resolve(); // 自分のファイルは1つずつ順に送る
+function sendFile(file) {
+  if (!peers.size) return;
+  const meta = { t: 'file', from: from(), fid: rid(), name: file.name, size: file.size, mime: file.type || 'application/octet-stream' };
+  const box = fileBubble(meta.from, meta);
+  fileChain = fileChain.then(async () => {
+    broadcast(JSON.stringify(meta));
+    const head = new TextEncoder().encode(meta.fid);
+    for (let off = 0; off < file.size; off += CHUNK) {
+      while (backlog() > 16) await new Promise(r => setTimeout(r, 20));
+      const body = new Uint8Array(await file.slice(off, off + CHUNK).arrayBuffer());
+      const frame = new Uint8Array(1 + head.length + body.length);
+      frame[0] = head.length; frame.set(head, 1); frame.set(body, 1 + head.length);
+      broadcast(frame.buffer);
+      box.querySelector('progress').value = Math.min(1, (off + CHUNK) / file.size);
+    }
+    broadcast(JSON.stringify({ t: 'end', fid: meta.fid }));
+    finishFile(box, file, meta);
+  });
+}
+
+// ---------- ホスト ----------
+$('hostBtn').onclick = () => {
+  saveName();
+  role = 'host';
+  members = [from()];
+  enterChat(); renderMembers();
+  $('inviteBtn').hidden = false;
+  sys('部屋を作りました。「＋ 招待」から参加者を何人でも招待できます。');
+  openInvite();
+};
+$('inviteBtn').onclick = () => openInvite();
+$('closeInvite').onclick = () => { $('invite').hidden = true; };
+$('newInvite').onclick = () => { if (pending) dropPeer(pending); makeInvite(); };
+
+function openInvite() {
+  $('invite').hidden = false;
+  if (!pending) makeInvite();
+}
+async function makeInvite() {
+  $('offerQR').textContent = '作成中…'; $('offerOut').value = ''; $('answerIn').value = ''; $('inviteState').textContent = '';
+  const p = pending = newPeer();
+  setupChannel(p, p.pc.createDataChannel('chat', { ordered: true }));
+  p.dc.addEventListener('open', () => {
+    if (pending === p) pending = null;
+    $('invite').hidden = true;
+  });
+  await p.pc.setLocalDescription(await p.pc.createOffer());
+  await waitIce(p.pc);
+  if (pending !== p) return;
+  const link = location.href.split('#')[0] + '#o=' + await encode(p.pc.localDescription);
+  $('offerOut').value = link;
+  renderQR($('offerQR'), link);
+}
+async function acceptAnswer(code) {
+  if (!pending) return;
+  try {
+    const desc = await decode(code);
+    if (desc.type !== 'answer') throw new Error('これは返信コードではありません');
+    await pending.pc.setRemoteDescription(desc);
+    $('inviteState').textContent = '接続しています…';
+  } catch (e) { $('inviteState').textContent = '返信コードを読み取れませんでした: ' + e.message; }
+}
+$('acceptAnswer').onclick = () => acceptAnswer($('answerIn').value);
+$('scanAnswer').onclick = () => startScan(acceptAnswer);
+
+// ---------- 参加者 ----------
+$('joinBtn').onclick = () => { saveName(); show('guestIn'); };
 $('acceptOffer').onclick = () => join($('offerIn').value);
+$('scanOffer').onclick = () => startScan(join);
 async function join(code) {
+  saveName();
   try {
     show(); setStatus('idle', 'コード作成中…');
-    newPeer();
-    pc.ondatachannel = e => setupChannel(e.channel);
-    await pc.setRemoteDescription(await decode(code));
-    await pc.setLocalDescription(await pc.createAnswer());
-    await waitIce(pc);
-    $('answerOut').value = await encode(pc.localDescription);
-    show('guestAnswer'); setStatus('idle', '相手の接続待ち');
-  } catch (e) { show('guestIn'); setStatus('failed', 'エラー'); alert('招待コードを読み取れませんでした: ' + e.message); }
+    const desc = await decode(code);
+    if (desc.type !== 'offer') throw new Error('これは招待コードではありません');
+    role = 'guest';
+    const p = newPeer();
+    p.pc.ondatachannel = e => setupChannel(p, e.channel);
+    await p.pc.setRemoteDescription(desc);
+    await p.pc.setLocalDescription(await p.pc.createAnswer());
+    await waitIce(p.pc);
+    const answer = await encode(p.pc.localDescription);
+    $('answerOut').value = answer;
+    renderQR($('answerQR'), answer);
+    $('name2').value = me.name;
+    show('guestAnswer'); setStatus('idle', 'ホストの接続待ち');
+  } catch (e) {
+    role = null; show('guestIn'); setStatus('failed', 'エラー');
+    $('offerIn').value = ''; $('offerIn').placeholder = '読み取れませんでした: ' + e.message;
+  }
 }
 
 // ---------- 共有・コピー ----------
@@ -231,120 +523,52 @@ async function share(text) {
   copy(text);
 }
 async function copy(text) {
-  try { await navigator.clipboard.writeText(text); toast('コピーしました'); }
-  catch { toast('コピーできませんでした。テキストを長押しして選択してください'); }
+  const prev = [$('status').dataset.s, $('statusText').textContent];
+  try { await navigator.clipboard.writeText(text); setStatus(prev[0], 'コピーしました'); }
+  catch { setStatus(prev[0], 'コピーできませんでした。長押しで選択してください'); }
+  setTimeout(() => setStatus(...prev), 1800);
 }
-function toast(t) { setStatus($('status').dataset.s, t); setTimeout(() => pc && pc.onconnectionstatechange(), 1800); }
 $('shareOffer').onclick = () => share($('offerOut').value);
 $('copyOffer').onclick = () => copy($('offerOut').value);
 $('shareAnswer').onclick = () => share($('answerOut').value);
 $('copyAnswer').onclick = () => copy($('answerOut').value);
 for (const id of ['offerOut', 'answerOut']) $(id).onfocus = e => e.target.select();
 
-// ---------- データチャネル（チャット本体） ----------
-// 送信プロトコル:
-//   文字列 = JSON制御メッセージ {t:'text'} / {t:'file', id,name,size,mime} / {t:'end', id}
-//   バイナリ = 直前に通知したファイルのチャンク
-let incoming = null;
-const sendQueue = []; let sending = false;
-
-function setupChannel(ch) {
-  dc = ch;
-  dc.binaryType = 'arraybuffer';
-  dc.bufferedAmountLowThreshold = 256 * 1024;
-  dc.onopen = () => {
-    $('setup').hidden = true; $('chat').hidden = false;
-    setStatus('connected', '接続中（P2P）');
-    sys('接続しました。ここから先のデータは端末間で直接やり取りされます。');
-    $('text').focus();
-  };
-  dc.onmessage = e => {
-    if (typeof e.data === 'string') {
-      const m = JSON.parse(e.data);
-      if (m.t === 'text') bubble(false).append(m.text);
-      else if (m.t === 'file') { incoming = { ...m, parts: [], got: 0, el: fileBubble(false, m) }; }
-      else if (m.t === 'end' && incoming) { finishFile(incoming.el, new Blob(incoming.parts, { type: incoming.mime }), incoming); incoming = null; }
-    } else if (incoming) {
-      incoming.parts.push(e.data); incoming.got += e.data.byteLength;
-      incoming.el.querySelector('progress').value = incoming.got / incoming.size;
-    }
-  };
-}
-
-function bubble(mine, cls = '') {
-  const d = document.createElement('div');
-  d.className = 'msg ' + (mine ? 'me ' : '') + cls;
-  $('log').append(d); $('log').scrollTop = $('log').scrollHeight;
-  return d;
-}
-function sys(t) { bubble(false, 'sys').textContent = t; }
-function fileBubble(mine, f) {
-  const d = bubble(mine);
-  d.innerHTML = '<div class="name"></div><progress max="1" value="0"></progress><div class="meta"></div>';
-  d.querySelector('.name').textContent = f.name;
-  d.querySelector('.meta').textContent = fmt(f.size);
-  return d;
-}
-function finishFile(el, blob, f) {
-  const url = URL.createObjectURL(blob);
-  el.textContent = '';
-  if (f.mime.startsWith('image/')) {
-    const img = new Image(); img.src = url; img.alt = f.name;
-    img.onload = () => $('log').scrollTop = $('log').scrollHeight;
-    el.append(img);
+// ---------- QRスキャナ（カメラ + jsQR） ----------
+let scanStream = null, scanDone = null;
+async function startScan(onResult) {
+  $('scanner').hidden = false; $('scanMsg').textContent = 'カメラを起動しています…';
+  try {
+    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+  } catch (e) {
+    $('scanMsg').textContent = 'カメラを使えませんでした。ブラウザのカメラ許可を確認するか、コードを貼り付けてください。'; return;
   }
-  const a = document.createElement('a'); a.href = url; a.download = f.name; a.textContent = '📎 ' + f.name;
-  const meta = document.createElement('div'); meta.className = 'meta'; meta.textContent = fmt(f.size);
-  el.append(a, meta);
-}
-const fmt = n => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
-
-// 送信は1つずつ順番に（ファイルのチャンクが混ざらないように）
-function enqueue(job) { sendQueue.push(job); if (!sending) runQueue(); }
-async function runQueue() {
-  sending = true;
-  while (sendQueue.length) await sendQueue.shift()();
-  sending = false;
-}
-function drain() {
-  if (dc.bufferedAmount <= dc.bufferedAmountLowThreshold) return Promise.resolve();
-  return new Promise(r => dc.addEventListener('bufferedamountlow', r, { once: true }));
-}
-
-$('composer').onsubmit = e => {
-  e.preventDefault();
-  const text = $('text').value.trim();
-  if (!text || !dc || dc.readyState !== 'open') return;
-  $('text').value = '';
-  bubble(true).append(text);
-  enqueue(async () => dc.send(JSON.stringify({ t: 'text', text })));
-};
-$('text').onkeydown = e => {
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && matchMedia('(pointer:fine)').matches) { e.preventDefault(); $('composer').requestSubmit(); }
-};
-$('fileBtn').onclick = () => $('file').click();
-$('file').onchange = () => { for (const f of $('file').files) sendFile(f); $('file').value = ''; };
-
-function sendFile(file) {
-  if (!dc || dc.readyState !== 'open') return;
-  const meta = { t: 'file', id: crypto.randomUUID?.() || String(Date.now()), name: file.name, size: file.size, mime: file.type || 'application/octet-stream' };
-  const el = fileBubble(true, meta);
-  enqueue(async () => {
-    dc.send(JSON.stringify(meta));
-    const buf = await file.arrayBuffer();
-    for (let off = 0; off < buf.byteLength; off += CHUNK) {
-      await drain();
-      dc.send(buf.slice(off, off + CHUNK));
-      el.querySelector('progress').value = Math.min(1, (off + CHUNK) / buf.byteLength);
+  const v = $('scanVideo'); v.srcObject = scanStream; await v.play();
+  $('scanMsg').textContent = 'QRコードを枠の中に映してください';
+  const c = document.createElement('canvas'), g = c.getContext('2d', { willReadFrequently: true });
+  scanDone = onResult;
+  const tick = () => {
+    if (!scanStream) return;
+    if (v.videoWidth) {
+      const s = Math.min(1, 640 / v.videoWidth);
+      c.width = v.videoWidth * s; c.height = v.videoHeight * s;
+      g.drawImage(v, 0, 0, c.width, c.height);
+      const r = jsQR(g.getImageData(0, 0, c.width, c.height).data, c.width, c.height, { inversionAttempts: 'dontInvert' });
+      if (r && r.data) { const cb = scanDone; stopScan(); cb(r.data); return; }
     }
-    dc.send(JSON.stringify({ t: 'end', id: meta.id }));
-    finishFile(el, file, meta);
-  });
+    requestAnimationFrame(tick);
+  };
+  tick();
 }
+function stopScan() {
+  if (scanStream) scanStream.getTracks().forEach(t => t.stop());
+  scanStream = null; scanDone = null; $('scanner').hidden = true;
+}
+$('closeScan').onclick = stopScan;
 
 // ---------- 招待リンクから開かれた場合は自動で参加 ----------
 function checkHash() {
-  if (!location.hash.startsWith('#o=') || pc) return;
+  if (!location.hash.startsWith('#o=') || role) return;
   const code = location.hash.slice(3);
   history.replaceState(null, '', location.pathname + location.search);
   join(code);
