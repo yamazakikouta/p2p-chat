@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>P2P Chat</title>
+<style>
+  :root {
+    --bg: #f3f5f4; --panel: #ffffff; --ink: #1c2421; --muted: #66726d;
+    --line: #d9e0dd; --accent: #0f7b62; --accent-ink: #ffffff;
+    --mine: #0f7b62; --mine-ink: #ffffff; --theirs: #e6ebe9; --warn: #b4551f;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121715; --panel: #1b2220; --ink: #e5ece9; --muted: #92a09a;
+      --line: #2c3633; --accent: #3fbf98; --accent-ink: #0b1411;
+      --mine: #2a8f71; --mine-ink: #ffffff; --theirs: #262f2c; --warn: #e6925e;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px);
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  header h1 { font-size: 16px; margin: 0; letter-spacing: .02em; }
+  .status { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .status[data-s="connected"] .dot { background: var(--accent); }
+  .status[data-s="failed"] .dot { background: var(--warn); }
+
+  #setup { padding: 16px; overflow-y: auto; display: grid; gap: 16px; max-width: 640px; width: 100%; margin: 0 auto; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 10px; }
+  .card h2 { font-size: 14px; margin: 0; }
+  .card p { margin: 0; color: var(--muted); font-size: 13px; }
+  .step { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--accent); text-transform: uppercase; }
+  textarea {
+    width: 100%; min-height: 84px; resize: vertical; font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace;
+    padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink);
+    word-break: break-all;
+  }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  button {
+    font: inherit; font-size: 14px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+    padding: 8px 14px; border-radius: 8px; cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  #chat { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  #log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .msg { max-width: 78%; padding: 8px 12px; border-radius: 14px; background: var(--theirs); word-wrap: break-word; white-space: pre-wrap; }
+  .msg.me { align-self: flex-end; background: var(--mine); color: var(--mine-ink); }
+  .msg.sys { align-self: center; background: none; color: var(--muted); font-size: 12px; padding: 0; }
+  .msg img { display: block; max-width: 100%; max-height: 260px; border-radius: 8px; }
+  .msg a { color: inherit; }
+  .msg .meta { font-size: 11px; opacity: .75; margin-top: 2px; }
+  progress { width: 100%; height: 6px; }
+  #composer {
+    display: flex; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--line); background: var(--panel); align-items: flex-end;
+  }
+  #text { flex: 1; min-height: 40px; max-height: 120px; font: inherit; font-size: 15px; resize: none; }
+  #fileBtn { padding: 8px 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>P2P Chat</h1>
+  <div class="status" id="status" data-s="idle"><span class="dot"></span><span id="statusText">未接続</span></div>
+</header>
+
+<main id="setup">
+  <!-- 最初の画面 -->
+  <section class="card" id="start">
+    <h2>接続のしかた</h2>
+    <p>サーバを使わず、接続コードをLINEやメールで手渡しして端末同士を直接つなぎます。</p>
+    <div class="row">
+      <button class="primary" id="hostBtn">部屋を作る（招待する側）</button>
+      <button id="joinBtn">招待コードを貼り付けて参加</button>
+    </div>
+  </section>
+
+  <!-- 招待する側 -->
+  <section class="card" id="hostOffer" hidden>
+    <span class="step">Step 1 / 2</span>
+    <h2>この招待リンクを相手に送る</h2>
+    <p>相手がリンクを開くと、返信用のコードが表示されます。</p>
+    <textarea id="offerOut" readonly></textarea>
+    <div class="row">
+      <button class="primary" id="shareOffer">共有</button>
+      <button id="copyOffer">コピー</button>
+    </div>
+  </section>
+  <section class="card" id="hostAnswer" hidden>
+    <span class="step">Step 2 / 2</span>
+    <h2>相手から届いた返信コードを貼り付ける</h2>
+    <textarea id="answerIn" placeholder="返信コードをここに貼り付け"></textarea>
+    <div class="row"><button class="primary" id="acceptAnswer">接続する</button></div>
+  </section>
+
+  <!-- 参加する側 -->
+  <section class="card" id="guestIn" hidden>
+    <h2>招待コード（またはリンク）を貼り付ける</h2>
+    <textarea id="offerIn" placeholder="招待リンク or コード"></textarea>
+    <div class="row"><button class="primary" id="acceptOffer">返信コードを作る</button></div>
+  </section>
+  <section class="card" id="guestAnswer" hidden>
+    <span class="step">最後のステップ</span>
+    <h2>この返信コードを招待してくれた人に送り返す</h2>
+    <p>相手が貼り付けると、自動でチャット画面に切り替わります。</p>
+    <textarea id="answerOut" readonly></textarea>
+    <div class="row">
+      <button class="primary" id="shareAnswer">共有</button>
+      <button id="copyAnswer">コピー</button>
+    </div>
+  </section>
+</main>
+
+<section id="chat" hidden>
+  <div id="log"></div>
+  <form id="composer">
+    <input type="file" id="file" multiple hidden>
+    <button type="button" id="fileBtn" title="画像・ファイルを送る">＋</button>
+    <textarea id="text" rows="1" placeholder="メッセージ"></textarea>
+    <button class="primary" type="submit">送信</button>
+  </form>
+</section>
+
+<script>
+// ---------- 設定 ----------
+// STUN: 自分のグローバルIPを知るためだけに使う公開サーバ（データは通らない）
+const ICE = { iceServers: [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+]};
+const CHUNK = 16 * 1024;
+
+const $ = id => document.getElementById(id);
+let pc, dc;
+
+function setStatus(s, text) { $('status').dataset.s = s; $('statusText').textContent = text; }
+function show(...ids) { for (const el of document.querySelectorAll('#setup > section')) el.hidden = !ids.includes(el.id); }
+
+// ---------- 接続コードの圧縮（SDP -> deflate -> base64url） ----------
+const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const unb64u = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+async function pipe(data, stream) { return new Response(new Blob([data]).stream().pipeThrough(stream)).arrayBuffer(); }
+
+async function encode(desc) {
+  const json = JSON.stringify({ t: desc.type, s: desc.sdp });
+  if ('CompressionStream' in window) return 'z' + b64u(await pipe(json, new CompressionStream('deflate-raw')));
+  return 'j' + b64u(new TextEncoder().encode(json));
+}
+async function decode(code) {
+  code = code.trim();
+  const m = code.match(/#o=([\w-]+)/); if (m) code = m[1]; // リンクごと貼られた場合
+  const body = unb64u(code.slice(1));
+  const json = code[0] === 'z'
+    ? new TextDecoder().decode(await pipe(body, new DecompressionStream('deflate-raw')))
+    : new TextDecoder().decode(body);
+  const o = JSON.parse(json);
+  return { type: o.t, sdp: o.s };
+}
+
+// ICE候補が集まりきるまで待つ（トリクルICEを使わず、1回のコード交換で済ませるため）
+function waitIce(pc) {
+  return new Promise(res => {
+    if (pc.iceGatheringState === 'complete') return res();
+    const done = () => { if (pc.iceGatheringState === 'complete') res(); };
+    pc.addEventListener('icegatheringstatechange', done);
+    setTimeout(res, 4000);
+  });
+}
+
+function newPeer() {
+  pc = new RTCPeerConnection(ICE);
+  pc.onconnectionstatechange = () => {
+    const s = pc.connectionState;
+    if (s === 'connected') setStatus('connected', '接続中（P2P）');
+    else if (s === 'connecting') setStatus('idle', '接続しています…');
+    else if (s === 'failed') { setStatus('failed', '接続失敗'); sys('接続できませんでした。ネットワークの組み合わせによっては直接つながらないことがあります（TURN中継が必要なケース）。'); }
+    else if (s === 'disconnected' || s === 'closed') { setStatus('failed', '切断'); sys('相手との接続が切れました'); }
+  };
+}
+
+// ---------- 招待する側 ----------
+$('hostBtn').onclick = async () => {
+  $('hostBtn').disabled = true; setStatus('idle', 'コード作成中…');
+  newPeer();
+  setupChannel(pc.createDataChannel('chat', { ordered: true }));
+  await pc.setLocalDescription(await pc.createOffer());
+  await waitIce(pc);
+  const link = location.href.split('#')[0] + '#o=' + await encode(pc.localDescription);
+  $('offerOut').value = link;
+  show('hostOffer', 'hostAnswer'); setStatus('idle', '相手の返信待ち');
+};
+$('acceptAnswer').onclick = async () => {
+  try { await pc.setRemoteDescription(await decode($('answerIn').value)); setStatus('idle', '接続しています…'); }
+  catch (e) { alert('返信コードを読み取れませんでした: ' + e.message); }
+};
+
+// ---------- 参加する側 ----------
+$('joinBtn').onclick = () => show('guestIn');
+$('acceptOffer').onclick = () => join($('offerIn').value);
+async function join(code) {
+  try {
+    show(); setStatus('idle', 'コード作成中…');
+    newPeer();
+    pc.ondatachannel = e => setupChannel(e.channel);
+    await pc.setRemoteDescription(await decode(code));
+    await pc.setLocalDescription(await pc.createAnswer());
+    await waitIce(pc);
+    $('answerOut').value = await encode(pc.localDescription);
+    show('guestAnswer'); setStatus('idle', '相手の接続待ち');
+  } catch (e) { show('guestIn'); setStatus('failed', 'エラー'); alert('招待コードを読み取れませんでした: ' + e.message); }
+}
+
+// ---------- 共有・コピー ----------
+async function share(text) {
+  if (navigator.share) { try { await navigator.share({ text }); return; } catch (e) { if (e.name === 'AbortError') return; } }
+  copy(text);
+}
+async function copy(text) {
+  try { await navigator.clipboard.writeText(text); toast('コピーしました'); }
+  catch { toast('コピーできませんでした。テキストを長押しして選択してください'); }
+}
+function toast(t) { setStatus($('status').dataset.s, t); setTimeout(() => pc && pc.onconnectionstatechange(), 1800); }
+$('shareOffer').onclick = () => share($('offerOut').value);
+$('copyOffer').onclick = () => copy($('offerOut').value);
+$('shareAnswer').onclick = () => share($('answerOut').value);
+$('copyAnswer').onclick = () => copy($('answerOut').value);
+for (const id of ['offerOut', 'answerOut']) $(id).onfocus = e => e.target.select();
+
+// ---------- データチャネル（チャット本体） ----------
+// 送信プロトコル:
+//   文字列 = JSON制御メッセージ {t:'text'} / {t:'file', id,name,size,mime} / {t:'end', id}
+//   バイナリ = 直前に通知したファイルのチャンク
+let incoming = null;
+const sendQueue = []; let sending = false;
+
+function setupChannel(ch) {
+  dc = ch;
+  dc.binaryType = 'arraybuffer';
+  dc.bufferedAmountLowThreshold = 256 * 1024;
+  dc.onopen = () => {
+    $('setup').hidden = true; $('chat').hidden = false;
+    setStatus('connected', '接続中（P2P）');
+    sys('接続しました。ここから先のデータは端末間で直接やり取りされます。');
+    $('text').focus();
+  };
+  dc.onmessage = e => {
+    if (typeof e.data === 'string') {
+      const m = JSON.parse(e.data);
+      if (m.t === 'text') bubble(false).append(m.text);
+      else if (m.t === 'file') { incoming = { ...m, parts: [], got: 0, el: fileBubble(false, m) }; }
+      else if (m.t === 'end' && incoming) { finishFile(incoming.el, new Blob(incoming.parts, { type: incoming.mime }), incoming); incoming = null; }
+    } else if (incoming) {
+      incoming.parts.push(e.data); incoming.got += e.data.byteLength;
+      incoming.el.querySelector('progress').value = incoming.got / incoming.size;
+    }
+  };
+}
+
+function bubble(mine, cls = '') {
+  const d = document.createElement('div');
+  d.className = 'msg ' + (mine ? 'me ' : '') + cls;
+  $('log').append(d); $('log').scrollTop = $('log').scrollHeight;
+  return d;
+}
+function sys(t) { bubble(false, 'sys').textContent = t; }
+function fileBubble(mine, f) {
+  const d = bubble(mine);
+  d.innerHTML = '<div class="name"></div><progress max="1" value="0"></progress><div class="meta"></div>';
+  d.querySelector('.name').textContent = f.name;
+  d.querySelector('.meta').textContent = fmt(f.size);
+  return d;
+}
+function finishFile(el, blob, f) {
+  const url = URL.createObjectURL(blob);
+  el.textContent = '';
+  if (f.mime.startsWith('image/')) {
+    const img = new Image(); img.src = url; img.alt = f.name;
+    img.onload = () => $('log').scrollTop = $('log').scrollHeight;
+    el.append(img);
+  }
+  const a = document.createElement('a'); a.href = url; a.download = f.name; a.textContent = '📎 ' + f.name;
+  const meta = document.createElement('div'); meta.className = 'meta'; meta.textContent = fmt(f.size);
+  el.append(a, meta);
+}
+const fmt = n => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
+
+// 送信は1つずつ順番に（ファイルのチャンクが混ざらないように）
+function enqueue(job) { sendQueue.push(job); if (!sending) runQueue(); }
+async function runQueue() {
+  sending = true;
+  while (sendQueue.length) await sendQueue.shift()();
+  sending = false;
+}
+function drain() {
+  if (dc.bufferedAmount <= dc.bufferedAmountLowThreshold) return Promise.resolve();
+  return new Promise(r => dc.addEventListener('bufferedamountlow', r, { once: true }));
+}
+
+$('composer').onsubmit = e => {
+  e.preventDefault();
+  const text = $('text').value.trim();
+  if (!text || !dc || dc.readyState !== 'open') return;
+  $('text').value = '';
+  bubble(true).append(text);
+  enqueue(async () => dc.send(JSON.stringify({ t: 'text', text })));
+};
+$('text').onkeydown = e => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && matchMedia('(pointer:fine)').matches) { e.preventDefault(); $('composer').requestSubmit(); }
+};
+$('fileBtn').onclick = () => $('file').click();
+$('file').onchange = () => { for (const f of $('file').files) sendFile(f); $('file').value = ''; };
+
+function sendFile(file) {
+  if (!dc || dc.readyState !== 'open') return;
+  const meta = { t: 'file', id: crypto.randomUUID?.() || String(Date.now()), name: file.name, size: file.size, mime: file.type || 'application/octet-stream' };
+  const el = fileBubble(true, meta);
+  enqueue(async () => {
+    dc.send(JSON.stringify(meta));
+    const buf = await file.arrayBuffer();
+    for (let off = 0; off < buf.byteLength; off += CHUNK) {
+      await drain();
+      dc.send(buf.slice(off, off + CHUNK));
+      el.querySelector('progress').value = Math.min(1, (off + CHUNK) / buf.byteLength);
+    }
+    dc.send(JSON.stringify({ t: 'end', id: meta.id }));
+    finishFile(el, file, meta);
+  });
+}
+
+// ---------- 招待リンクから開かれた場合は自動で参加 ----------
+function checkHash() {
+  if (!location.hash.startsWith('#o=') || pc) return;
+  const code = location.hash.slice(3);
+  history.replaceState(null, '', location.pathname + location.search);
+  join(code);
+}
+addEventListener('hashchange', checkHash);
+checkHash();
+</script>
+</body>
+</html>
